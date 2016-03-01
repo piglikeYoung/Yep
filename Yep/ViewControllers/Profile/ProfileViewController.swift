@@ -571,8 +571,6 @@ class ProfileViewController: SegueViewController {
                     learningSkills = skillsFromUserSkillList(user.learningSkills)
 
                     updateProfileCollectionView()
-                    
-                    GoogleAnalyticsTrackEvent("Visit Profile", label: user.nickname, value: 0)
                 }
 
             default:
@@ -723,6 +721,7 @@ class ProfileViewController: SegueViewController {
                     YepUserDefaults.nickname.bindListener(listener.nickname) { [weak self] nickname in
                         dispatch_async(dispatch_get_main_queue()) {
                             self?.customNavigationItem.title = nickname
+                            self?.updateProfileCollectionView()
                         }
                     }
 
@@ -737,6 +736,8 @@ class ProfileViewController: SegueViewController {
                             }
                         }
                     }
+
+                    NSNotificationCenter.defaultCenter().addObserver(self, selector: "updateUIForUsername:", name: EditProfileViewController.Notification.NewUsername, object: nil)
                 }
             }
 
@@ -872,7 +873,6 @@ class ProfileViewController: SegueViewController {
                 message: sessionMessage,
                 finish: { success in
                     println("share Profile to WeChat Session success: \(success)")
-                    GoogleAnalyticsTrackSocial("WeChat Session", action: "Profile", target: profileURL.absoluteString)
                 }
             )
 
@@ -883,12 +883,9 @@ class ProfileViewController: SegueViewController {
                 message: timelineMessage,
                 finish: { success in
                     println("share Profile to WeChat Timeline success: \(success)")
-                    GoogleAnalyticsTrackSocial("WeChat Timeline", action: "Profile", target: profileURL.absoluteString)
                 }
             )
             
-            GoogleAnalyticsTrackSocial("Share", action: "Profile", target: profileURL.absoluteString)
-
             let activityViewController = UIActivityViewController(activityItems: ["\(nickname), \(NSLocalizedString("From Yep, with Skills.", comment: "")) \(profileURL)"], applicationActivities: [weChatSessionActivity, weChatTimelineActivity])
 
             self.presentViewController(activityViewController, animated: true, completion: nil)
@@ -898,21 +895,15 @@ class ProfileViewController: SegueViewController {
     @objc private func tryShareMyProfile(sender: AnyObject?) {
 
         if let _ = profileUser?.username {
-            
-            if let profileUser = profileUser {
-                GoogleAnalyticsTrackEvent("Share Profile", label: "\(profileUser.nickname) \(profileUser.userID)", value: 0)
-            }
-            
             shareProfile()
 
         } else {
-
             YepAlert.textInput(title: NSLocalizedString("Create a username", comment: ""), message: NSLocalizedString("In order to share your profile, create a unique username first.", comment: ""), placeholder: NSLocalizedString("use letters, numbers, and underscore", comment: ""), oldText: nil, confirmTitle: NSLocalizedString("Create", comment: ""), cancelTitle: NSLocalizedString("Cancel", comment: ""), inViewController: self, withConfirmAction: { text in
 
                 let newUsername = text
 
                 updateMyselfWithInfo(["username": newUsername], failureHandler: { [weak self] reason, errorMessage in
-                    defaultFailureHandler(reason, errorMessage: errorMessage)
+                    defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
                     YepAlert.alertSorry(message: errorMessage ?? NSLocalizedString("Create username failed!", comment: ""), inViewController: self)
 
@@ -984,6 +975,10 @@ class ProfileViewController: SegueViewController {
         profileUser = nil
     }
 
+    @objc private func updateUIForUsername(sender: NSNotification) {
+        updateProfileCollectionView()
+    }
+
     private func updateProfileCollectionView() {
         dispatch_async(dispatch_get_main_queue()) {
             self.profileCollectionView.collectionViewLayout.invalidateLayout()
@@ -996,8 +991,6 @@ class ProfileViewController: SegueViewController {
 
         if let profileUser = profileUser {
                     
-            GoogleAnalyticsTrackEvent("Say Hi", label: "\(profileUser.nickname) \(profileUser.userID)", value: 0)
-
             guard let realm = try? Realm() else {
                 return
             }
@@ -1107,86 +1100,6 @@ class ProfileViewController: SegueViewController {
         }
     }
 
-    /*
-    func moreAction() {
-
-        let alertController = UIAlertController(title: nil, message: nil, preferredStyle: .ActionSheet)
-
-        let toggleDisturbAction: UIAlertAction = UIAlertAction(title: NSLocalizedString("Do not disturb", comment: ""), style: .Default) { action -> Void in
-            // TODO: toggleDisturbAction
-        }
-        alertController.addAction(toggleDisturbAction)
-
-        let reportAction: UIAlertAction = UIAlertAction(title: NSLocalizedString("Report", comment: ""), style: .Default) { action -> Void in
-
-            let reportWithReason: ReportReason -> Void = { reason in
-
-                if let profileUser = self.profileUser {
-
-                    reportProfileUser(profileUser, forReason: reason, failureHandler: { (reason, errorMessage) in
-                        defaultFailureHandler(reason, errorMessage)
-
-                        if let errorMessage = errorMessage {
-                            dispatch_async(dispatch_get_main_queue()) {
-                                YepAlert.alertSorry(message: errorMessage, inViewController: self)
-                            }
-                        }
-
-                    }, completion: { success in
-                        dispatch_async(dispatch_get_main_queue()) {
-                            YepAlert.alert(title: NSLocalizedString("Success", comment: ""), message: NSLocalizedString("Report recorded!", comment: ""), dismissTitle: NSLocalizedString("OK", comment: ""), inViewController: self, withDismissAction: nil)
-                        }
-                    })
-                }
-            }
-
-            let reportAlertController = UIAlertController(title: NSLocalizedString("Report Reason", comment: ""), message: nil, preferredStyle: .ActionSheet)
-
-            let pornoReasonAction: UIAlertAction = UIAlertAction(title: ReportReason.Porno.description, style: .Default) { action -> Void in
-                reportWithReason(.Porno)
-            }
-            reportAlertController.addAction(pornoReasonAction)
-
-            let advertisingReasonAction: UIAlertAction = UIAlertAction(title: ReportReason.Advertising.description, style: .Default) { action -> Void in
-                reportWithReason(.Advertising)
-            }
-            reportAlertController.addAction(advertisingReasonAction)
-
-            let scamsReasonAction: UIAlertAction = UIAlertAction(title: ReportReason.Scams.description, style: .Default) { action -> Void in
-                reportWithReason(.Scams)
-            }
-            reportAlertController.addAction(scamsReasonAction)
-
-            let otherReasonAction: UIAlertAction = UIAlertAction(title: ReportReason.Other("").description, style: .Default) { action -> Void in
-                YepAlert.textInput(title: NSLocalizedString("Other Reason", comment: ""), placeholder: nil, oldText: nil, confirmTitle: NSLocalizedString("OK", comment: ""), cancelTitle: NSLocalizedString("Cancel", comment: ""), inViewController: self, withConfirmAction: { text in
-                    reportWithReason(.Other(text))
-                }, cancelAction: nil)
-            }
-            reportAlertController.addAction(otherReasonAction)
-
-            let cancelAction: UIAlertAction = UIAlertAction(title: NSLocalizedString("Cancel", comment: ""), style: .Cancel) { action -> Void in
-                self.dismissViewControllerAnimated(true, completion: nil)
-            }
-            reportAlertController.addAction(cancelAction)
-
-            self.presentViewController(reportAlertController, animated: true, completion: nil)
-        }
-        alertController.addAction(reportAction)
-
-        let blockAction: UIAlertAction = UIAlertAction(title: NSLocalizedString("Block", comment: ""), style: .Destructive) { action -> Void in
-            // TODO: blockAction
-        }
-        alertController.addAction(blockAction)
-
-        let cancelAction: UIAlertAction = UIAlertAction(title: NSLocalizedString("Cancel", comment: ""), style: .Cancel) { action -> Void in
-            self.dismissViewControllerAnimated(true, completion: nil)
-        }
-        alertController.addAction(cancelAction)
-
-        self.presentViewController(alertController, animated: true, completion: nil)
-    }
-    */
-
     // MARK: Navigation
 
     override func prepareForSegue(segue: UIStoryboardSegue, sender: AnyObject?) {
@@ -1212,21 +1125,6 @@ class ProfileViewController: SegueViewController {
             }
 
             vc.hidesBottomBarWhenPushed = true
-            
-//            if let skillInfo = sender as? [String: AnyObject] {
-//                let vc = segue.destinationViewController as! SkillHomeViewController
-//                vc.hidesBottomBarWhenPushed = true
-//
-//                if let preferedSkillSet = skillInfo["preferedSkillSet"] as? Int {
-//                    vc.preferedSkillSet = SkillSet(rawValue: preferedSkillSet)
-//                }
-//
-//                vc.skill = skillInfo["skill"] as? SkillCell.Skill
-//
-//                vc.afterUpdatedSkillCoverAction = { [weak self] in
-//                    self?.updateProfileCollectionView()
-//                }
-//            }
 
         case "showFeedsOfProfileUser":
 
@@ -1413,7 +1311,6 @@ extension ProfileViewController: UICollectionViewDataSource, UICollectionViewDel
             }
 
             cell.tapAction = { [weak self] skill in
-                //self?.performSegueWithIdentifier("showSkillHome", sender: ["skill": skill, "preferedSkillSet": SkillSet.Master.rawValue])
                 self?.performSegueWithIdentifier("showFeedsWithSkill", sender: ["skill": skill, "preferedSkillSet": SkillSet.Master.rawValue])
             }
 
@@ -1433,7 +1330,6 @@ extension ProfileViewController: UICollectionViewDataSource, UICollectionViewDel
             }
 
             cell.tapAction = { [weak self] skill in
-                //self?.performSegueWithIdentifier("showSkillHome", sender: ["skill": skill, "preferedSkillSet": SkillSet.Learning.rawValue])
                 self?.performSegueWithIdentifier("showFeedsWithSkill", sender: ["skill": skill, "preferedSkillSet": SkillSet.Learning.rawValue])
             }
 
@@ -1814,31 +1710,6 @@ extension ProfileViewController: UICollectionViewDataSource, UICollectionViewDel
 }
 
 extension ProfileViewController: UIScrollViewDelegate {
-
-    func scrollViewDidScroll(scrollView: UIScrollView) {
-        
-//        guard let profileUser = profileUser else {
-//            return
-//        }
-//        
-//        if let _ = profileUser.username {
-//            
-//        } else {
-//            if profileUser.userID != YepUserDefaults.userID.value {
-//                return
-//            }
-//        }
-//        
-//        let progress = -(scrollView.contentOffset.y)/100
-//        
-//        shareView.center = CGPoint(x: view.frame.width/2.0, y: 150.0 + 50*progress)
-//        
-//        shareView.updateWithProgress(progress)
-        
-//        if scrollView.contentOffset.y < -300 {
-//            YepAlert.alert(title: "Hello", message: "My name is NIX.\nHow are you?", dismissTitle: "I'm fine.", inViewController: self, withDismissAction: nil)
-//        }
-    }
     
     func scrollViewDidEndDragging(scrollView: UIScrollView, willDecelerate decelerate: Bool) {
         if shareView.progress >= 1.0 {
@@ -1864,7 +1735,7 @@ extension ProfileViewController: NSURLConnectionDataDelegate {
                 
                 socialAccountWithProvider(socialAccount.rawValue, failureHandler: { reason, errorMessage in
 
-                    defaultFailureHandler(reason, errorMessage: errorMessage)
+                    defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
                 }, completion: { provider in
 

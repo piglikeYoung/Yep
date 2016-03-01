@@ -105,7 +105,6 @@ func attachmentFromDiscoveredAttachment(discoverAttachments: [DiscoveredAttachme
         return newAttachment
         
     }).filter({ $0 != nil }).map({ discoverAttachment in discoverAttachment! })
-
 }
 
 func userSkillsFromSkills(skills: [Skill], inRealm realm: Realm) -> [UserSkill] {
@@ -236,7 +235,7 @@ func userSkillsFromSkillsData(skillsData: [JSONDictionary], inRealm realm: Realm
 func syncMyInfoAndDoFurtherAction(furtherAction: () -> Void) {
 
     userInfo(failureHandler: { (reason, errorMessage) in
-        defaultFailureHandler(reason, errorMessage: errorMessage)
+        defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
         furtherAction()
 
@@ -349,7 +348,6 @@ func syncMyInfoAndDoFurtherAction(furtherAction: () -> Void) {
                                 }
                             }
                     }
-
 
                     // also save some infomation in YepUserDefaults
 
@@ -737,10 +735,12 @@ func syncUnreadMessagesAndDoFurtherAction(furtherAction: (messageIDs: [String]) 
         
         unreadMessages(failureHandler: { (reason, errorMessage) in
 
-            defaultFailureHandler(reason, errorMessage: errorMessage)
+            defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
             dispatch_async(dispatch_get_main_queue()) {
                 isFetchingUnreadMessages.value = false
+
+                furtherAction(messageIDs: [])
             }
 
         }, completion: { allUnreadMessages in
@@ -781,49 +781,6 @@ func syncUnreadMessagesAndDoFurtherAction(furtherAction: (messageIDs: [String]) 
         })
     }
 }
-
-/*
-func syncMessagesReadStatus() {
-    
-    sentButUnreadMessages(failureHandler: nil, completion: { messagesDictionary in
-
-        dispatch_async(realmQueue) {
-            if let messageIDs = messagesDictionary["message_ids"] as? [String] {
-                guard let realm = try? Realm() else {
-                    return
-                }
-                var messages = messagesUnreadSentByMe(inRealm: realm)
-                
-                var toMarkMessages = [Message]()
-                
-                if messageIDs.count < 1 {
-                    for oldMessage in messages {
-                        if oldMessage.sendState == MessageSendState.Successed.rawValue {
-                            toMarkMessages.append(oldMessage)
-                        }
-                    }
-                } else {
-                    for messageID in messageIDs {
-                        let predicate = NSPredicate(format: "messageID != %@", argumentArray: [messageID])
-                        messages = messages.filter(predicate)
-                    }
-                    
-                    for message in messages {
-                        toMarkMessages.append(message)
-                    }
-                }
-                
-                let _ = try? realm.write {
-                    for message in toMarkMessages {
-                        message.sendState = MessageSendState.Read.rawValue
-                        message.readed = true
-                    }
-                }
-            }
-        }
-    })
-}
-*/
 
 func recordMessageWithMessageID(messageID: String, detailInfo messageInfo: JSONDictionary, inRealm realm: Realm) {
 
@@ -961,17 +918,6 @@ func syncMessageWithMessageInfo(messageInfo: JSONDictionary, messageAge: Message
 
         if let message = message {
 
-            // 原本是判断标记失败时再次标记，现已改为 batch 标记，先注释了
-            /*
-            if message.readed == true {
-                markAsReadMessage(message, failureHandler: nil) { success in
-                    if success {
-                        println("Mark message \(messageID) as read")
-                    }
-                }
-            }
-            */
-
             // 纪录消息的发送者
 
             if let senderInfo = messageInfo["sender"] as? JSONDictionary {
@@ -1065,12 +1011,40 @@ func syncMessageWithMessageInfo(messageInfo: JSONDictionary, messageAge: Message
                                 conversationWithUser = sender
 
                             } else {
-                                if let userID = messageInfo["recipient_id"] as? String, user = userWithUserID(userID, inRealm: realm) {
+                                guard let userID = messageInfo["recipient_id"] as? String else {
+                                    message.deleteInRealm(realm)
+                                    return
+                                }
+
+                                if let user = userWithUserID(userID, inRealm: realm) {
                                     conversation = user.conversation
                                     conversationWithUser = user
+
+                                } else {
+                                    let newUser = User()
+                                    newUser.userID = userID
+
+                                    realm.add(newUser)
+
+                                    conversationWithUser = newUser
+                                    
+                                    userInfoOfUserWithUserID(userID, failureHandler: nil, completion: { userInfo in
+
+                                        dispatch_async(dispatch_get_main_queue()) {
+                                            guard let realm = try? Realm() else { return }
+
+                                            realm.beginWrite()
+                                            updateUserWithUserID(userID, useUserInfo: userInfo, inRealm: realm)
+                                            let _ = try? realm.commitWrite()
+
+                                            NSNotificationCenter.defaultCenter().postNotificationName(YepConfig.Notification.updatedUser, object: nil)
+                                        }
+                                    })
                                 }
                             }
                         }
+
+                        //println("conversationWithUser: \(conversationWithUser)")
 
                         // 没有 Conversation 就尝试建立它
 

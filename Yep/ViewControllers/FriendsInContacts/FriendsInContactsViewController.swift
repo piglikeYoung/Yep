@@ -22,7 +22,7 @@ class FriendsInContactsViewController: BaseViewController {
         let addressBook = APAddressBook()
         addressBook.fieldsMask = APContactField(rawValue: APContactField.Name.rawValue | APContactField.PhonesOnly.rawValue)
         return addressBook
-        }()
+    }()
 
     private var discoveredUsers = [DiscoveredUser]() {
         didSet {
@@ -79,7 +79,7 @@ class FriendsInContactsViewController: BaseViewController {
                 }
 
                 friendsInContacts(uploadContacts, failureHandler: { (reason, errorMessage) in
-                    defaultFailureHandler(reason, errorMessage: errorMessage)
+                    defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
                     dispatch_async(dispatch_get_main_queue()) { [weak self] in
                         self?.activityIndicator.stopAnimating()

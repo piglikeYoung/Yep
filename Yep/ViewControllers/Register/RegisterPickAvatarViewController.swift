@@ -203,14 +203,18 @@ class RegisterPickAvatarViewController: SegueViewController {
     @IBAction private func tryOpenCameraRoll(sender: UIButton) {
 
         let openCameraRoll: ProposerAction = { [weak self] in
-            if UIImagePickerController.isSourceTypeAvailable(UIImagePickerControllerSourceType.SavedPhotosAlbum) {
-                let imagePicker = UIImagePickerController()
-                imagePicker.delegate = self
-                imagePicker.sourceType = UIImagePickerControllerSourceType.PhotoLibrary
-                imagePicker.allowsEditing = true
 
-                self?.presentViewController(imagePicker, animated: true, completion: nil)
+            guard UIImagePickerController.isSourceTypeAvailable(.PhotoLibrary) else {
+                self?.alertCanNotAccessCameraRoll()
+                return
             }
+
+            let imagePicker = UIImagePickerController()
+            imagePicker.delegate = self
+            imagePicker.sourceType = .PhotoLibrary
+            imagePicker.allowsEditing = true
+
+            self?.presentViewController(imagePicker, animated: true, completion: nil)
         }
 
         proposeToAccess(.Photos, agreed: openCameraRoll, rejected: {
@@ -230,7 +234,7 @@ class RegisterPickAvatarViewController: SegueViewController {
 
             updateAvatarWithImageData(imageData, failureHandler: { (reason, errorMessage) in
 
-                defaultFailureHandler(reason, errorMessage: errorMessage)
+                defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
                 YepHUD.hideActivityIndicator()
 
@@ -252,8 +256,16 @@ class RegisterPickAvatarViewController: SegueViewController {
             uploadAvatarAndGotoPickSkills()
 
         } else {
-            dispatch_async(sessionQueue) {
-                self.stillImageOutput.captureStillImageAsynchronouslyFromConnection(self.stillImageOutput.connectionWithMediaType(self.mediaType), completionHandler: { (imageDataSampleBuffer, error) -> Void in
+            dispatch_async(sessionQueue) { [weak self] in
+                guard let strongSelf = self else {
+                    return
+                }
+
+                guard let captureConnection = strongSelf.stillImageOutput.connectionWithMediaType(strongSelf.mediaType) else {
+                    return
+                }
+
+                strongSelf.stillImageOutput.captureStillImageAsynchronouslyFromConnection(captureConnection, completionHandler: { imageDataSampleBuffer, error in
                     if error == nil {
                         let data = AVCaptureStillImageOutput.jpegStillImageNSDataRepresentation(imageDataSampleBuffer)
                         var image = UIImage(data: data)!
@@ -264,9 +276,13 @@ class RegisterPickAvatarViewController: SegueViewController {
 
                         image = image.fixRotation().navi_centerCropWithSize(YepConfig.avatarMaxSize())!
 
-                        dispatch_async(dispatch_get_main_queue()) {
-                            self.avatar = image
-                            self.pickAvatarState = .Captured
+                        dispatch_async(dispatch_get_main_queue()) { [weak self] in
+                            guard let strongSelf = self else {
+                                return
+                            }
+
+                            strongSelf.avatar = image
+                            strongSelf.pickAvatarState = .Captured
                         }
                     }
                 })

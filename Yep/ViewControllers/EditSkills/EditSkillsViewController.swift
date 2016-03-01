@@ -34,18 +34,17 @@ class EditSkillsViewController: BaseViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-//        animatedOnNavigationBar = false
+        //animatedOnNavigationBar = false
 
         title = skillSet?.name
         // get all skill categories
 
         allSkillCategories(failureHandler: { (reason, errorMessage) -> Void in
-            defaultFailureHandler(reason, errorMessage: errorMessage)
+            defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
         }, completion: { skillCategories -> Void in
             self.skillCategories = skillCategories
         })
-
 
         // table view
 
@@ -60,7 +59,6 @@ class EditSkillsViewController: BaseViewController {
         skillsTableView.separatorInset = separatorInset
 
         skillsTableView.registerNib(UINib(nibName: editSkillCellID, bundle: nil), forCellReuseIdentifier: editSkillCellID)
-
 
         // add skills view
 
@@ -210,7 +208,6 @@ class EditSkillsViewController: BaseViewController {
 
             self?.navigationController?.presentViewController(vc, animated: true, completion: nil)
         }
-
 
         // prepare realm & me
 

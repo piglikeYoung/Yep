@@ -314,6 +314,7 @@ class ConversationViewController: BaseViewController {
     var afterDeletedFeedAction: ((feedID: String) -> Void)?
     var conversationDirtyAction: (() -> Void)?
     var conversationIsDirty = false
+    var syncPlayFeedAudioAction: (() -> Void)?
 
     private var needDetectMention = false {
         didSet {
@@ -393,7 +394,11 @@ class ConversationViewController: BaseViewController {
         }
     }
 
-    private lazy var moreView: ConversationMoreView = ConversationMoreView()
+    private lazy var moreView: ConversationMoreView = {
+        let view = ConversationMoreView()
+        view.isMyFeed = self.conversation.withGroup?.withFeed?.creator?.isMe ?? false
+        return view
+    }()
 
     private lazy var moreMessageTypesView: MoreMessageTypesView = {
 
@@ -410,11 +415,15 @@ class ConversationViewController: BaseViewController {
         view.takePhotoAction = { [weak self] in
 
             let openCamera: ProposerAction = { [weak self] in
-                if UIImagePickerController.isSourceTypeAvailable(UIImagePickerControllerSourceType.Camera) {
-                    if let strongSelf = self {
-                        strongSelf.imagePicker.sourceType = .Camera
-                        strongSelf.presentViewController(strongSelf.imagePicker, animated: true, completion: nil)
-                    }
+
+                guard UIImagePickerController.isSourceTypeAvailable(.Camera) else {
+                    self?.alertCanNotOpenCamera()
+                    return
+                }
+
+                if let strongSelf = self {
+                    strongSelf.imagePicker.sourceType = .Camera
+                    strongSelf.presentViewController(strongSelf.imagePicker, animated: true, completion: nil)
                 }
             }
 
@@ -426,11 +435,15 @@ class ConversationViewController: BaseViewController {
         view.choosePhotoAction = { [weak self] in
 
             let openCameraRoll: ProposerAction = { [weak self] in
-                if UIImagePickerController.isSourceTypeAvailable(UIImagePickerControllerSourceType.PhotoLibrary){
-                    if let strongSelf = self {
-                        strongSelf.imagePicker.sourceType = .PhotoLibrary
-                        strongSelf.presentViewController(strongSelf.imagePicker, animated: true, completion: nil)
-                    }
+
+                guard UIImagePickerController.isSourceTypeAvailable(.PhotoLibrary) else {
+                    self?.alertCanNotAccessCameraRoll()
+                    return
+                }
+
+                if let strongSelf = self {
+                    strongSelf.imagePicker.sourceType = .PhotoLibrary
+                    strongSelf.presentViewController(strongSelf.imagePicker, animated: true, completion: nil)
                 }
             }
 
@@ -712,30 +725,15 @@ class ConversationViewController: BaseViewController {
         conversationCollectionView.registerClass(ChatRightLocationCell.self, forCellWithReuseIdentifier: chatRightLocationCellIdentifier)
 
         conversationCollectionView.registerClass(ChatLeftRecallCell.self, forCellWithReuseIdentifier: chatLeftRecallCellIdentifier)
-        /*
-        conversationCollectionView.registerNib(UINib(nibName: chatLeftTextCellIdentifier, bundle: nil), forCellWithReuseIdentifier: chatLeftTextCellIdentifier)
-        conversationCollectionView.registerNib(UINib(nibName: chatRightTextCellIdentifier, bundle: nil), forCellWithReuseIdentifier: chatRightTextCellIdentifier)
-        conversationCollectionView.registerNib(UINib(nibName: chatLeftTextURLCellIdentifier, bundle: nil), forCellWithReuseIdentifier: chatLeftTextURLCellIdentifier)
-        conversationCollectionView.registerNib(UINib(nibName: chatRightTextURLCellIdentifier, bundle: nil), forCellWithReuseIdentifier: chatRightTextURLCellIdentifier)
-        conversationCollectionView.registerNib(UINib(nibName: chatLeftImageCellIdentifier, bundle: nil), forCellWithReuseIdentifier: chatLeftImageCellIdentifier)
-        conversationCollectionView.registerNib(UINib(nibName: chatRightImageCellIdentifier, bundle: nil), forCellWithReuseIdentifier: chatRightImageCellIdentifier)
-        conversationCollectionView.registerNib(UINib(nibName: chatLeftAudioCellIdentifier, bundle: nil), forCellWithReuseIdentifier: chatLeftAudioCellIdentifier)
-        conversationCollectionView.registerNib(UINib(nibName: chatRightAudioCellIdentifier, bundle: nil), forCellWithReuseIdentifier: chatRightAudioCellIdentifier)
-        conversationCollectionView.registerNib(UINib(nibName: chatLeftVideoCellIdentifier, bundle: nil), forCellWithReuseIdentifier: chatLeftVideoCellIdentifier)
-        conversationCollectionView.registerNib(UINib(nibName: chatRightVideoCellIdentifier, bundle: nil), forCellWithReuseIdentifier: chatRightVideoCellIdentifier)
-        conversationCollectionView.registerNib(UINib(nibName: chatLeftLocationCellIdentifier, bundle: nil), forCellWithReuseIdentifier: chatLeftLocationCellIdentifier)
-        conversationCollectionView.registerNib(UINib(nibName: chatRightLocationCellIdentifier, bundle: nil), forCellWithReuseIdentifier: chatRightLocationCellIdentifier)
-        */
+
         conversationCollectionView.registerNib(UINib(nibName: chatLeftSocialWorkCellIdentifier, bundle: nil), forCellWithReuseIdentifier: chatLeftSocialWorkCellIdentifier)
         
         conversationCollectionView.bounces = true
-
 
         let tap = UITapGestureRecognizer(target: self, action: "tapToCollapseMessageToolBar:")
         conversationCollectionView.addGestureRecognizer(tap)
 
         messageToolbarBottomConstraint.constant = 0
-        //moreMessageTypesViewHeightConstraint.constant = moreMessageTypesViewDefaultHeight
 
         keyboardMan.animateWhenKeyboardAppear = { [weak self] appearPostIndex, keyboardHeight, keyboardHeightIncrement in
 
@@ -751,7 +749,7 @@ class ConversationViewController: BaseViewController {
                 }
             }
 
-            println("appear \(keyboardHeight), \(keyboardHeightIncrement)\n")
+            //println("appear \(keyboardHeight), \(keyboardHeightIncrement)\n")
 
             if let strongSelf = self {
 
@@ -794,7 +792,7 @@ class ConversationViewController: BaseViewController {
                 }
             }
 
-            println("disappear \(keyboardHeight)\n")
+            //println("disappear \(keyboardHeight)\n")
 
             if let strongSelf = self {
                 
@@ -830,7 +828,7 @@ class ConversationViewController: BaseViewController {
                     dispatch_async(realmQueue) { [weak self] in
                         
                         messagesFromRecipient(recipient, withTimeDirection: timeDirection, failureHandler: { reason, errorMessage in
-                            defaultFailureHandler(reason, errorMessage: errorMessage)
+                            defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
                             failedAction?()
 
@@ -885,16 +883,9 @@ class ConversationViewController: BaseViewController {
             //view.addSubview(conversationFPSLabel)
         #endif
     }
-    
+
     override func viewWillAppear(animated: Bool) {
         super.viewWillAppear(animated)
-        /*
-        // 尝试恢复原始的 NavigationControllerDelegate，如果自定义 push 了才需要
-        if let delegate = originalNavigationControllerDelegate {
-            navigationController?.delegate = delegate
-            navigationControllerDelegate = nil
-        }
-        */
 
         if isFirstAppear {
 
@@ -966,6 +957,22 @@ class ConversationViewController: BaseViewController {
             // MARK: Mention
 
             if needDetectMention {
+
+                messageToolbar.initMentionUserAction = { [weak self] in
+
+                    let users = self?.conversation.mentionInitUsers ?? []
+
+                    self?.mentionView.users = users
+
+                    guard !users.isEmpty else {
+                        self?.mentionView.hide()
+                        return
+                    }
+
+                    self?.view.layoutIfNeeded()
+                    self?.mentionView.show()
+                }
+
                 messageToolbar.tryMentionUserAction = { [weak self] usernamePrefix in
                     usersMatchWithUsernamePrefix(usernamePrefix, failureHandler: nil) { users in
                         dispatch_async(dispatch_get_main_queue()) { [weak self] in
@@ -1084,7 +1091,7 @@ class ConversationViewController: BaseViewController {
                         }
 
                     }, failureHandler: { [weak self] reason, errorMessage in
-                        defaultFailureHandler(reason, errorMessage: errorMessage)
+                        defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
                         YepAlert.alertSorry(message: NSLocalizedString("Failed to send text!\nTry tap on message to resend.", comment: ""), inViewController: self)
 
@@ -1112,7 +1119,7 @@ class ConversationViewController: BaseViewController {
                         }
 
                     }, failureHandler: { [weak self] reason, errorMessage in
-                        defaultFailureHandler(reason, errorMessage: errorMessage)
+                        defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
                         dispatch_async(dispatch_get_main_queue()) {
                             YepAlert.alertSorry(message: NSLocalizedString("Failed to send text!\nTry tap on message to resend.", comment: ""), inViewController: self)
@@ -1187,7 +1194,7 @@ class ConversationViewController: BaseViewController {
                             }
 
                         }, failureHandler: { [weak self] reason, errorMessage in
-                            defaultFailureHandler(reason, errorMessage: errorMessage)
+                            defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
                             YepAlert.alertSorry(message: NSLocalizedString("Failed to send audio!\nTry tap on message to resend.", comment: ""), inViewController: self)
 
@@ -1214,7 +1221,7 @@ class ConversationViewController: BaseViewController {
                             }
 
                         }, failureHandler: { [weak self] reason, errorMessage in
-                            defaultFailureHandler(reason, errorMessage: errorMessage)
+                            defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
                             YepAlert.alertSorry(message: NSLocalizedString("Failed to send audio!\nTry tap on message to resend.", comment: ""), inViewController: self)
 
@@ -1431,10 +1438,10 @@ class ConversationViewController: BaseViewController {
 
         waverView.removeFromSuperview()
 
-        // stop audio playing
+        // stop audio playing if need
         
         if let audioPlayer = YepAudioService.sharedManager.audioPlayer {
-            if audioPlayer.playing {
+            if audioPlayer.playing, let delegate = audioPlayer.delegate as? ConversationViewController where delegate == self {
                 audioPlayer.stop()
 
                 UIDevice.currentDevice().proximityMonitoringEnabled = false
@@ -1471,7 +1478,7 @@ class ConversationViewController: BaseViewController {
             let userNickname = user.nickname
 
             stateOfFriendRequestWithUser(user, failureHandler: { reason, errorMessage in
-                defaultFailureHandler(reason, errorMessage: errorMessage)
+                defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
             }, completion: { isFriend, receivedFriendRequestState, receivedFriendRequestID, sentFriendRequestState in
 
@@ -1656,6 +1663,10 @@ class ConversationViewController: BaseViewController {
 
         feedView.feed = feed
 
+        feedView.syncPlayAudioAction = { [weak self] in
+            self?.syncPlayFeedAudioAction?()
+        }
+
         feedView.tapAvatarAction = { [weak self] in
             self?.performSegueWithIdentifier("showProfileFromFeedView", sender: nil)
         }
@@ -1708,15 +1719,6 @@ class ConversationViewController: BaseViewController {
             mediaPreviewWindow.rootViewController = vc
             mediaPreviewWindow.windowLevel = UIWindowLevelAlert - 1
             mediaPreviewWindow.makeKeyAndVisible()
-
-            /*
-            let info = [
-                "transitionView": transitionView,
-                "attachments": Box(value: attachments),
-                "index": index,
-            ]
-            self?.performSegueWithIdentifier("showFeedMedia", sender: info)
-            */
         }
 
         feedView.tapGithubRepoAction = { [weak self] URL in
@@ -1754,7 +1756,6 @@ class ConversationViewController: BaseViewController {
         let height = NSLayoutConstraint(item: feedView, attribute: .Height, relatedBy: .Equal, toItem: nil, attribute: .NotAnAttribute, multiplier: 1.0, constant: feedView.normalHeight)
 
         NSLayoutConstraint.activateConstraints(constraintsH)
-        //NSLayoutConstraint.activateConstraints(constraintsV)
         NSLayoutConstraint.activateConstraints([top, height])
 
         feedView.heightConstraint = height
@@ -1766,7 +1767,6 @@ class ConversationViewController: BaseViewController {
 
         guard newContentOffsetY + conversationCollectionView.contentInset.top > 0 else {
             conversationCollectionView.contentInset.bottom = bottom
-
             return
         }
 
@@ -2169,8 +2169,6 @@ class ConversationViewController: BaseViewController {
 
                         let bottom = strongSelf.view.bounds.height - strongSelf.messageToolbar.frame.origin.y + SubscribeView.height
 
-                        //let newContentOffsetY = strongSelf.conversationCollectionView.contentSize.height - strongSelf.messageToolbar.frame.origin.y + SubscribeView.height
-
                         let extraPart = strongSelf.conversationCollectionView.contentSize.height - (strongSelf.messageToolbar.frame.origin.y - SubscribeView.height)
 
                         let newContentOffsetY: CGFloat
@@ -2381,7 +2379,6 @@ class ConversationViewController: BaseViewController {
     
     private func shareFeedWithDescripion(description: String, groupShareURLString: String) {
 
-        
         let info = MonkeyKing.Info(
             title: NSLocalizedString("Join Us", comment: ""),
             description: description,
@@ -2403,7 +2400,6 @@ class ConversationViewController: BaseViewController {
             message: sessionMessage,
             finish: { success in
                 println("share Feed to WeChat Session success: \(success)")
-                GoogleAnalyticsTrackSocial("WeChat Session", action: "Feed", target: groupShareURLString)
             }
         )
         
@@ -2414,15 +2410,12 @@ class ConversationViewController: BaseViewController {
             message: timelineMessage,
             finish: { success in
                 println("share Feed to WeChat Timeline success: \(success)")
-                GoogleAnalyticsTrackSocial("WeChat TimeLine", action: "Feed", target: groupShareURLString)
             }
         )
         
         let shareText = "\(description) \(groupShareURLString)\n\(NSLocalizedString("From Yep", comment: ""))"
         
         let activityViewController = UIActivityViewController(activityItems: [shareText], applicationActivities: [weChatSessionActivity, weChatTimelineActivity])
-        
-        GoogleAnalyticsTrackSocial("Share", action: "Feed", target: groupShareURLString)
         
         dispatch_async(dispatch_get_main_queue()) { [weak self] in
             self?.presentViewController(activityViewController, animated: true, completion: nil)
@@ -2655,7 +2648,6 @@ class ConversationViewController: BaseViewController {
                 messageIDs = filteredMessageIDs
             }
         }
-        
         
         // 在前台时才能做插入
         
@@ -3077,215 +3069,6 @@ class ConversationViewController: BaseViewController {
                 }
             }
 
-        /*
-        case "showFeedMedia":
-
-            let info = sender as! [String: AnyObject]
-
-            let vc = segue.destinationViewController as! MessageMediaViewController
- 
-            if let box = info["attachments"] as? Box<[DiscoveredAttachment]> {
-                let attachments = box.value
-                vc.previewMedias = attachments.map({ PreviewMedia.AttachmentType(attachment: $0) })
-            }
-
-            if let index = info["index"] as? Int {
-                vc.startIndex = index
-            }
-
-            let transitionView = info["transitionView"] as! UIImageView
-
-            let delegate = ConversationMessagePreviewNavigationControllerDelegate()
-            delegate.isFeedMedia = true
-            delegate.snapshot = UIScreen.mainScreen().snapshotViewAfterScreenUpdates(false)
-
-            var frame = transitionView.convertRect(transitionView.frame, toView: view)
-            delegate.frame = frame
-            if let image = transitionView.image {
-                let width = image.size.width
-                let height = image.size.height
-                if width > height {
-                    let newWidth = frame.width * (width / height)
-                    frame.origin.x -= (newWidth - frame.width) / 2
-                    frame.size.width = newWidth
-                } else {
-                    let newHeight = frame.height * (height / width)
-                    frame.origin.y -= (newHeight - frame.height) / 2
-                    frame.size.height = newHeight
-                }
-                delegate.thumbnailImage = image
-            }
-            delegate.thumbnailFrame = frame
-
-            delegate.transitionView = transitionView
-
-            navigationControllerDelegate = delegate
-
-            // 在自定义 push 之前，记录原始的 NavigationControllerDelegate 以便 pop 后恢复
-            originalNavigationControllerDelegate = navigationController!.delegate
-            
-            navigationController?.delegate = delegate
-
-        case "showMessageMedia":
-
-            let vc = segue.destinationViewController as! MessageMediaViewController
-
-            if let info = sender as? [String: AnyObject], mediaMessages = info["mediaMessages"] as? [Message], index = info["index"] as? Int, message = mediaMessages[safe: index], messageIndex = messages.indexOf(message) {
-
-//                vc.previewMedias = [
-//                    PreviewMedia.MessageType(message: message)
-//                ]
-
-                vc.previewMedias = mediaMessages.map({ PreviewMedia.MessageType(message: $0) })
-
-                vc.startIndex = index
-
-                let indexPath = NSIndexPath(forRow: messageIndex - displayedMessagesRange.location , inSection: 0)
-
-                if let cell = conversationCollectionView.cellForItemAtIndexPath(indexPath) {
-
-                    var frame = CGRectZero
-                    var transitionView: UIView?
-
-                    if let sender = message.fromFriend {
-                        if sender.friendState != UserFriendState.Me.rawValue {
-                            switch message.mediaType {
-
-                            case MessageMediaType.Image.rawValue:
-                                let cell = cell as! ChatLeftImageCell
-                                transitionView = cell.messageImageView
-                                frame = cell.convertRect(cell.messageImageView.frame, toView: view)
-
-                            case MessageMediaType.Video.rawValue:
-                                let cell = cell as! ChatLeftVideoCell
-                                transitionView = cell.thumbnailImageView
-                                frame = cell.convertRect(cell.thumbnailImageView.frame, toView: view)
-
-                            case MessageMediaType.Location.rawValue:
-                                let cell = cell as! ChatLeftLocationCell
-                                transitionView = cell.mapImageView
-                                frame = cell.convertRect(cell.mapImageView.frame, toView: view)
-
-                            default:
-                                break
-                            }
-
-                        } else {
-                            switch message.mediaType {
-
-                            case MessageMediaType.Image.rawValue:
-                                let cell = cell as! ChatRightImageCell
-                                transitionView = cell.messageImageView
-                                frame = cell.convertRect(cell.messageImageView.frame, toView: view)
-
-                            case MessageMediaType.Video.rawValue:
-                                let cell = cell as! ChatRightVideoCell
-                                transitionView = cell.thumbnailImageView
-                                frame = cell.convertRect(cell.thumbnailImageView.frame, toView: view)
-
-                            case MessageMediaType.Location.rawValue:
-                                let cell = cell as! ChatRightLocationCell
-                                transitionView = cell.mapImageView
-                                frame = cell.convertRect(cell.mapImageView.frame, toView: view)
-
-                            default:
-                                break
-                            }
-                        }
-                    }
-
-                    let delegate = ConversationMessagePreviewNavigationControllerDelegate()
-                    delegate.snapshot = UIScreen.mainScreen().snapshotViewAfterScreenUpdates(false)
-                    delegate.frame = frame
-                    delegate.thumbnailFrame = frame
-                    delegate.thumbnailImage = message.thumbnailImage
-                    delegate.transitionView = transitionView
-
-                    navigationControllerDelegate = delegate
-
-                    // 在自定义 push 之前，记录原始的 NavigationControllerDelegate 以便 pop 后恢复
-                    originalNavigationControllerDelegate = navigationController!.delegate
-
-                    navigationController?.delegate = delegate
-                }
-            }
-
-        case "presentMessageMedia":
-
-            let vc = segue.destinationViewController as! MessageMediaViewController
-
-            if let message = sender as? Message, messageIndex = messages.indexOf(message) {
-
-                vc.previewMedias = [
-                    PreviewMedia.MessageType(message: message)
-                ]
-
-                let indexPath = NSIndexPath(forRow: messageIndex - displayedMessagesRange.location , inSection: 0)
-
-                if let cell = conversationCollectionView.cellForItemAtIndexPath(indexPath) {
-
-                    var frame = CGRectZero
-                    var transitionView: UIView?
-
-                    if let sender = message.fromFriend {
-                        if sender.friendState != UserFriendState.Me.rawValue {
-                            switch message.mediaType {
-
-                            case MessageMediaType.Image.rawValue:
-                                let cell = cell as! ChatLeftImageCell
-                                transitionView = cell.messageImageView
-                                frame = cell.convertRect(cell.messageImageView.frame, toView: view)
-
-                            case MessageMediaType.Video.rawValue:
-                                let cell = cell as! ChatLeftVideoCell
-                                transitionView = cell.thumbnailImageView
-                                frame = cell.convertRect(cell.thumbnailImageView.frame, toView: view)
-
-                            case MessageMediaType.Location.rawValue:
-                                let cell = cell as! ChatLeftLocationCell
-                                transitionView = cell.mapImageView
-                                frame = cell.convertRect(cell.mapImageView.frame, toView: view)
-
-                            default:
-                                break
-                            }
-
-                        } else {
-                            switch message.mediaType {
-                                
-                            case MessageMediaType.Image.rawValue:
-                                let cell = cell as! ChatRightImageCell
-                                transitionView = cell.messageImageView
-                                frame = cell.convertRect(cell.messageImageView.frame, toView: view)
-
-                            case MessageMediaType.Video.rawValue:
-                                let cell = cell as! ChatRightVideoCell
-                                transitionView = cell.thumbnailImageView
-                                frame = cell.convertRect(cell.thumbnailImageView.frame, toView: view)
-
-                            case MessageMediaType.Location.rawValue:
-                                let cell = cell as! ChatRightLocationCell
-                                transitionView = cell.mapImageView
-                                frame = cell.convertRect(cell.mapImageView.frame, toView: view)
-
-                            default:
-                                break
-                            }
-                        }
-                    }
-
-                    vc.modalPresentationStyle = UIModalPresentationStyle.Custom
-
-                    let transitionManager = ConversationMessagePreviewTransitionManager()
-                    transitionManager.frame = frame
-                    transitionManager.transitionView = transitionView
-
-                    vc.transitioningDelegate = transitionManager
-
-                    messagePreviewTransitionManager = transitionManager
-                }
-            }
-        */
         case "presentPickLocation":
 
             let nvc = segue.destinationViewController as! UINavigationController
@@ -3303,7 +3086,7 @@ class ConversationViewController: BaseViewController {
                         }
 
                     }, failureHandler: { [weak self] reason, errorMessage in
-                        defaultFailureHandler(reason, errorMessage: errorMessage)
+                        defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
                         YepAlert.alertSorry(message: NSLocalizedString("Failed to send location!\nTry tap on message to resend.", comment: ""), inViewController: self)
 
@@ -3320,7 +3103,7 @@ class ConversationViewController: BaseViewController {
                         }
 
                     }, failureHandler: { [weak self] reason, errorMessage in
-                        defaultFailureHandler(reason, errorMessage: errorMessage)
+                        defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
                         YepAlert.alertSorry(message: NSLocalizedString("Failed to send location!\nTry tap on message to resend.", comment: ""), inViewController: self)
 
@@ -3694,24 +3477,6 @@ extension ConversationViewController: UICollectionViewDataSource, UICollectionVi
                 mediaPreviewWindow.makeKeyAndVisible()
             }
         }
-
-        /*
-        if message.mediaType == MessageMediaType.Video.rawValue {
-            performSegueWithIdentifier("showMessageMedia", sender: ["mediaMessages": [message], "index": 0])
-
-        } else {
-            let predicate = NSPredicate(format: "mediaType = %d", MessageMediaType.Image.rawValue)
-
-            let mediaMessagesResult = messages.filter(predicate)
-
-            let mediaMessages = mediaMessagesResult.map({ $0 })
-
-            if let index = mediaMessagesResult.indexOf(message) {
-
-                performSegueWithIdentifier("showMessageMedia", sender: ["mediaMessages": mediaMessages, "index": index])
-            }
-        }
-        */
     }
 
     func collectionView(collectionView: UICollectionView, cellForItemAtIndexPath indexPath: NSIndexPath) -> UICollectionViewCell {
@@ -4037,7 +3802,7 @@ extension ConversationViewController: UICollectionViewDataSource, UICollectionVi
                                     YepAlert.confirmOrCancel(title: NSLocalizedString("Action", comment: ""), message: NSLocalizedString("Resend image?", comment: ""), confirmTitle: NSLocalizedString("Resend", comment: ""), cancelTitle: NSLocalizedString("Cancel", comment: ""), inViewController: self, withConfirmAction: {
                                         
                                         resendMessage(message, failureHandler: { [weak self] reason, errorMessage in
-                                            defaultFailureHandler(reason, errorMessage: errorMessage)
+                                            defaultFailureHandler(reason: reason, errorMessage: errorMessage)
                                             
                                             YepAlert.alertSorry(message: NSLocalizedString("Failed to resend image!\nPlease make sure your iPhone is connected to the Internet.", comment: ""), inViewController: self)
                                             
@@ -4075,7 +3840,7 @@ extension ConversationViewController: UICollectionViewDataSource, UICollectionVi
                                     YepAlert.confirmOrCancel(title: NSLocalizedString("Action", comment: ""), message: NSLocalizedString("Resend audio?", comment: ""), confirmTitle: NSLocalizedString("Resend", comment: ""), cancelTitle: NSLocalizedString("Cancel", comment: ""), inViewController: self, withConfirmAction: {
                                         
                                         resendMessage(message, failureHandler: { [weak self] reason, errorMessage in
-                                            defaultFailureHandler(reason, errorMessage: errorMessage)
+                                            defaultFailureHandler(reason: reason, errorMessage: errorMessage)
                                             
                                             YepAlert.alertSorry(message: NSLocalizedString("Failed to resend audio!\nPlease make sure your iPhone is connected to the Internet.", comment: ""), inViewController: self)
                                             
@@ -4105,7 +3870,7 @@ extension ConversationViewController: UICollectionViewDataSource, UICollectionVi
                                     YepAlert.confirmOrCancel(title: NSLocalizedString("Action", comment: ""), message: NSLocalizedString("Resend video?", comment: ""), confirmTitle: NSLocalizedString("Resend", comment: ""), cancelTitle: NSLocalizedString("Cancel", comment: ""), inViewController: self, withConfirmAction: {
                                         
                                         resendMessage(message, failureHandler: { [weak self] reason, errorMessage in
-                                            defaultFailureHandler(reason, errorMessage: errorMessage)
+                                            defaultFailureHandler(reason: reason, errorMessage: errorMessage)
                                             
                                             YepAlert.alertSorry(message: NSLocalizedString("Failed to resend video!\nPlease make sure your iPhone is connected to the Internet.", comment: ""), inViewController: self)
                                             
@@ -4141,7 +3906,7 @@ extension ConversationViewController: UICollectionViewDataSource, UICollectionVi
                                     YepAlert.confirmOrCancel(title: NSLocalizedString("Action", comment: ""), message: NSLocalizedString("Resend location?", comment: ""), confirmTitle: NSLocalizedString("Resend", comment: ""), cancelTitle: NSLocalizedString("Cancel", comment: ""), inViewController: self, withConfirmAction: {
                                         
                                         resendMessage(message, failureHandler: { [weak self] reason, errorMessage in
-                                            defaultFailureHandler(reason, errorMessage: errorMessage)
+                                            defaultFailureHandler(reason: reason, errorMessage: errorMessage)
                                             
                                             YepAlert.alertSorry(message: NSLocalizedString("Failed to resend location!\nPlease make sure your iPhone is connected to the Internet.", comment: ""), inViewController: self)
                                             
@@ -4179,7 +3944,7 @@ extension ConversationViewController: UICollectionViewDataSource, UICollectionVi
                             YepAlert.confirmOrCancel(title: NSLocalizedString("Action", comment: ""), message: NSLocalizedString("Resend text?", comment: ""), confirmTitle: NSLocalizedString("Resend", comment: ""), cancelTitle: NSLocalizedString("Cancel", comment: ""), inViewController: self, withConfirmAction: {
 
                                 resendMessage(message, failureHandler: { [weak self] reason, errorMessage in
-                                    defaultFailureHandler(reason, errorMessage: errorMessage)
+                                    defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
                                     YepAlert.alertSorry(message: NSLocalizedString("Failed to resend text!\nPlease make sure your iPhone is connected to the Internet.", comment: ""), inViewController: self)
 
@@ -4246,7 +4011,7 @@ extension ConversationViewController: UICollectionViewDataSource, UICollectionVi
         }
 
         openGraphWithURL(fisrtURL, failureHandler: { reason, errorMessage in
-            defaultFailureHandler(reason, errorMessage: errorMessage)
+            defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
             dispatch_async(dispatch_get_main_queue()) {
                 markMessageOpenGraphDetected()
@@ -4349,7 +4114,6 @@ extension ConversationViewController: UICollectionViewDataSource, UICollectionVi
         
         dragBeginLocation = nil
     }
-
 }
 
 // MARK: FayeServiceDelegate
@@ -4667,7 +4431,7 @@ extension ConversationViewController: UIImagePickerControllerDelegate, UINavigat
                 }
 
             }, failureHandler: { [weak self] reason, errorMessage in
-                defaultFailureHandler(reason, errorMessage: errorMessage)
+                defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
                 YepAlert.alertSorry(message: NSLocalizedString("Failed to send image!\nTry tap on message to resend.", comment: ""), inViewController: self)
 
@@ -4697,7 +4461,7 @@ extension ConversationViewController: UIImagePickerControllerDelegate, UINavigat
                 }
                 
             }, failureHandler: { [weak self] reason, errorMessage in
-                defaultFailureHandler(reason, errorMessage: errorMessage)
+                defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
                 YepAlert.alertSorry(message: NSLocalizedString("Failed to send image!\nTry tap on message to resend.", comment: ""), inViewController: self)
 
@@ -4802,7 +4566,7 @@ extension ConversationViewController: UIImagePickerControllerDelegate, UINavigat
         if let withFriend = conversation.withFriend {
 
             sendVideoInFilePath(videoURL.path!, orFileData: nil, metaData: metaData, toRecipient: withFriend.userID, recipientType: "User", afterCreatedMessage: afterCreatedMessageAction, failureHandler: { [weak self] reason, errorMessage in
-                defaultFailureHandler(reason, errorMessage: errorMessage)
+                defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
                 YepAlert.alertSorry(message: NSLocalizedString("Failed to send video!\nTry tap on message to resend.", comment: ""), inViewController: self)
 
@@ -4813,7 +4577,7 @@ extension ConversationViewController: UIImagePickerControllerDelegate, UINavigat
         } else if let withGroup = conversation.withGroup {
 
             sendVideoInFilePath(videoURL.path!, orFileData: nil, metaData: metaData, toRecipient: withGroup.groupID, recipientType: "Circle", afterCreatedMessage: afterCreatedMessageAction, failureHandler: { [weak self] reason, errorMessage in
-                defaultFailureHandler(reason, errorMessage: errorMessage)
+                defaultFailureHandler(reason: reason, errorMessage: errorMessage)
 
                 YepAlert.alertSorry(message: NSLocalizedString("Failed to send video!\nTry tap on message to resend.", comment: ""), inViewController: self)
 
